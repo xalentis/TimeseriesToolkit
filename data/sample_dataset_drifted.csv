@@ -1,0 +1,101 @@
+date,temperature,humidity,city,weather_condition,event,attendees
+2024-01-01,15.2,38.300000000000004,Los Angeles,Cloudy,Beach Party,615
+2024-01-02,22.0,57.1,Los Angeles,Rainy,Tech Conference,319
+2024-01-03,33.6,53.6,Seattle,Rainy,Open House,641
+2024-01-04,16.2,62.6,Chicago,Rainy,Food Expo,269
+2024-01-05,14.4,51.8,Austin,Snowy,Workshop,153
+2024-01-06,32.300000000000004,56.7,Los Angeles,Cloudy,Startup Meetup,473
+2024-01-07,22.4,43.4,Denver,Sunny,Workshop,281
+2024-01-08,21.5,57.9,Denver,Rainy,Art Fair,347
+2024-01-09,14.2,65.6,Seattle,Rainy,Code Sprint,172
+2024-01-10,22.3,50.4,Miami,Rainy,Tech Conference,281
+2024-01-11,33.1,69.0,Austin,Sunny,Food Expo,677
+2024-01-12,33.0,33.3,Chicago,Snowy,Startup Meetup,355
+2024-01-13,23.7,61.7,Austin,Sunny,Ski Event,692
+2024-01-14,29.2,63.800000000000004,Chicago,Cloudy,Film Screening,414
+2024-01-15,27.8,50.0,Los Angeles,Sunny,Fitness Camp,597
+2024-01-16,13.6,60.699999999999996,Austin,Sunny,Film Screening,485
+2024-01-17,13.8,68.5,Denver,Rainy,Workshop,545
+2024-01-18,31.8,36.0,New York,Cloudy,Career Expo,148
+2024-01-19,24.599999999999998,37.800000000000004,Miami,Snowy,Food Expo,631
+2024-01-20,14.899999999999999,38.7,Austin,Snowy,Beach Yoga,148
+2024-01-21,20.299999999999997,55.6,Seattle,Sunny,Food Expo,425
+2024-01-22,29.2,55.9,New York,Sunny,Film Screening,558
+2024-01-23,13.600000000000001,70.8,Boston,Cloudy,Winter Gala,145
+2024-01-24,21.8,49.4,Seattle,Rainy,Career Fair,489
+2024-01-25,22.5,43.199999999999996,Chicago,Snowy,Book Launch,549
+2024-01-26,30.8,41.5,Boston,Sunny,Beach Party,249
+2024-01-27,19.599999999999998,48.599999999999994,Boston,Rainy,Startup Meetup,324
+2024-01-28,27.4,31.8,New York,Snowy,Beach Party,438
+2024-01-29,22.3,60.2,Seattle,Snowy,Book Launch,148
+2024-01-30,13.9,34.900000000000006,San Francisco,Cloudy,Beach Yoga,343
+2024-01-31,19.599999999999998,47.8,Boston,Snowy,Workshop,231
+2024-02-01,17.9,39.800000000000004,New York,Cloudy,Career Expo,505
+2024-02-02,18.4,48.2,Miami,Sunny,Career Fair,430
+2024-02-03,18.599999999999998,51.4,San Francisco,Rainy,Indoor Marathon,375
+2024-02-04,20.5,56.0,San Francisco,Snowy,Open House,615
+2024-02-05,21.0,53.099999999999994,Miami,Rainy,Film Screening,486
+2024-02-06,29.1,41.0,Seattle,Snowy,Open House,232
+2024-02-07,24.6,48.5,Denver,Rainy,Medical Conference,380
+2024-02-08,15.1,67.3,New York,Cloudy,Indoor Marathon,142
+2024-02-09,25.8,46.900000000000006,San Francisco,Snowy,Beach Yoga,470
+2024-02-10,19.8,41.7,Austin,Snowy,Film Screening,186
+2024-02-11,32.7,57.9,New York,Snowy,Music Festival,182
+2024-02-12,30.3,56.9,Boston,Sunny,Ski Event,591
+2024-02-13,31.6,65.9,Austin,Rainy,Workshop,276
+2024-02-14,19.6,43.0,Boston,Rainy,Workshop,168
+2024-02-15,22.9,36.199999999999996,Chicago,Cloudy,Beach Yoga,238
+2024-02-16,21.7,57.1,Denver,Rainy,Winter Gala,344
+2024-02-17,28.2,62.2,Denver,Rainy,Product Demo,472
+2024-02-18,34.4,58.0,New York,Snowy,Code Sprint,437
+2024-02-19,24.900000000000002,65.8,Boston,Sunny,Beach Yoga,443
+2024-02-20,20.799999999999997,38.199999999999996,Los Angeles,Sunny,Beach Yoga,281
+2024-02-21,20.700000000000003,45.9,Chicago,Cloudy,Art Fair,543
+2024-02-22,26.400000000000002,34.9,Austin,Rainy,Book Launch,412
+2024-02-23,19.5,48.7,Denver,Snowy,Career Fair,608
+2024-02-24,15.7,53.8,Los Angeles,Cloudy,Open House,318
+2024-02-25,20.0,61.2,Boston,Snowy,Workshop,642
+2024-02-26,19.700000000000003,47.2,New York,Rainy,Code Sprint,569
+2024-02-27,17.599999999999998,48.9,New York,Rainy,Music Festival,346
+2024-02-28,18.8,43.0,Boston,Sunny,Open House,205
+2024-02-29,25.299999999999997,45.4,Miami,Rainy,Fitness Camp,656
+2024-03-01,32.2,68.80000000000001,Chicago,Cloudy,Beach Party,585
+2024-03-02,19.3,63.4,Boston,Rainy,Book Launch,427
+2024-03-03,17.2,59.5,Boston,Rainy,Food Expo,160
+2024-03-04,14.399999999999999,61.5,Boston,Cloudy,Medical Conference,100
+2024-03-05,15.4,67.7,Boston,Rainy,Art Fair,549
+2024-03-06,21.2,41.2,New York,Snowy,Code Sprint,604
+2024-03-07,17.099999999999998,45.0,San Francisco,Cloudy,Fitness Camp,140
+2024-03-08,21.2,67.7,Seattle,Snowy,Career Expo,228
+2024-03-09,28.7,67.6,Boston,Rainy,Music Festival,513
+2024-03-10,21.5,47.199999999999996,Boston,Rainy,Tech Conference,284
+2024-03-11,16.6,69.30000000000001,Seattle,Snowy,Startup Meetup,689
+2024-03-12,13.3,50.4,Miami,Snowy,Product Demo,363
+2024-03-13,32.5,62.5,Denver,Sunny,Workshop,128
+2024-03-14,19.7,61.7,Los Angeles,Sunny,Workshop,230
+2024-03-15,23.599999999999998,58.300000000000004,Austin,Rainy,Food Expo,255
+2024-03-16,15.7,55.9,San Francisco,Rainy,Medical Conference,628
+2024-03-17,30.2,56.0,Boston,Sunny,Startup Meetup,236
+2024-03-18,24.5,47.099999999999994,Chicago,Snowy,Code Sprint,136
+2024-03-19,24.2,60.5,San Francisco,Cloudy,Beach Yoga,258
+2024-03-20,30.299999999999997,70.39999999999999,Austin,Rainy,Film Screening,335
+2024-03-21,14.7,63.699999999999996,New York,Snowy,Startup Meetup,162
+2024-03-22,30.599999999999998,44.900000000000006,Austin,Sunny,Food Expo,459
+2024-03-23,31.3,37.6,Austin,Rainy,Open House,261
+2024-03-24,28.1,63.0,Denver,Rainy,Indoor Marathon,131
+2024-03-25,28.099999999999998,59.5,Seattle,Rainy,Career Fair,186
+2024-03-26,19.6,48.0,San Francisco,Rainy,Code Sprint,454
+2024-03-27,32.9,52.2,San Francisco,Snowy,Indoor Marathon,639
+2024-03-28,24.2,42.800000000000004,San Francisco,Cloudy,Film Screening,363
+2024-03-29,28.900000000000002,38.900000000000006,Miami,Snowy,Career Expo,552
+2024-03-30,27.9,70.1,Los Angeles,Rainy,Book Launch,675
+2024-03-31,17.8,47.9,Seattle,Rainy,Medical Conference,505
+2024-04-01,17.6,43.7,San Francisco,Cloudy,Career Fair,472
+2024-04-02,25.7,46.0,Chicago,Rainy,Music Festival,219
+2024-04-03,28.8,65.1,Los Angeles,Snowy,Art Fair,625
+2024-04-04,19.5,49.6,Los Angeles,Rainy,Book Launch,112
+2024-04-05,23.5,49.3,Chicago,Cloudy,Indoor Marathon,337
+2024-04-06,17.5,41.6,Los Angeles,Cloudy,Music Festival,544
+2024-04-07,18.7,61.8,New York,Cloudy,Career Expo,255
+2024-04-08,29.0,39.9,Los Angeles,Cloudy,Career Fair,370
+2024-04-09,14.7,52.6,Chicago,Cloudy,Career Expo,164
