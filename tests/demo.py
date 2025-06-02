@@ -73,4 +73,3 @@ summary = detector.get_drift_summary()
 print("\nDrift Summary:")
 for key, value in summary.items():
     print(f"{key}: {value}")
-detector.export_results('drift_results.json', format='json')
