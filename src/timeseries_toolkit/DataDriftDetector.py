@@ -46,6 +46,7 @@ class DataDriftDetector:
         self.reference_data_ = None
         self.comparison_data_ = None
         
+
     def detect_drift(self,
                     reference_data: pd.DataFrame,
                     comparison_data: pd.DataFrame,
@@ -91,8 +92,18 @@ class DataDriftDetector:
                 reference_data, comparison_data, common_columns
             )
         
+        # Filter out date columns from categorical_columns if they exist
+        if date_columns:
+            categorical_columns = [col for col in categorical_columns 
+                                 if col not in date_columns]
+        
         numerical_columns = [col for col in common_columns 
                            if col not in categorical_columns]
+        
+        # Filter numerical columns to ensure they can be converted to numeric
+        numerical_columns = self._validate_numerical_columns(
+            reference_data, comparison_data, numerical_columns, verbose
+        )
         
         # Initialize results dictionary
         results = self._initialize_results()
@@ -143,6 +154,7 @@ class DataDriftDetector:
         
         return results
     
+
     def _validate_and_prepare_data(self, 
                                   reference_data: pd.DataFrame,
                                   comparison_data: pd.DataFrame,
@@ -162,6 +174,68 @@ class DataDriftDetector:
         
         return common_columns
     
+
+    def _is_date_column(self, series: pd.Series) -> bool:
+        """Check if a series contains date-like data."""
+        try:
+            # Try to convert a sample to datetime
+            sample = series.dropna().head(10)
+            if len(sample) == 0:
+                return False
+            
+            # Check if it looks like a date string
+            sample_str = str(sample.iloc[0])
+            if len(sample_str) >= 8 and ('-' in sample_str or '/' in sample_str):
+                pd.to_datetime(sample, errors='raise')
+                return True
+            return False
+        except:
+            return False
+    
+
+    def _can_convert_to_numeric(self, series: pd.Series) -> bool:
+        """Check if a series can be safely converted to numeric."""
+        try:
+            # Try converting a sample to numeric
+            sample = series.dropna().head(100)
+            if len(sample) == 0:
+                return False
+            
+            pd.to_numeric(sample, errors='raise')
+            return True
+        except:
+            return False
+    
+
+    def _validate_numerical_columns(self, 
+                                   reference_data: pd.DataFrame,
+                                   comparison_data: pd.DataFrame,
+                                   numerical_columns: List[str],
+                                   verbose: bool) -> List[str]:
+        """Validate that numerical columns can actually be converted to numeric."""
+        valid_numerical = []
+        
+        for col in numerical_columns:
+            ref_series = reference_data[col]
+            comp_series = comparison_data[col]
+            
+            # Check if it's a date column
+            if self._is_date_column(ref_series) or self._is_date_column(comp_series):
+                if verbose:
+                    print(f"Column '{col}' detected as date column, excluding from numerical analysis.")
+                continue
+            
+            # Check if it can be converted to numeric
+            if (self._can_convert_to_numeric(ref_series) and 
+                self._can_convert_to_numeric(comp_series)):
+                valid_numerical.append(col)
+            else:
+                if verbose:
+                    print(f"Column '{col}' cannot be converted to numeric, excluding from numerical analysis.")
+        
+        return valid_numerical
+    
+
     def _detect_categorical_columns(self, 
                                    reference_data: pd.DataFrame,
                                    comparison_data: pd.DataFrame,
@@ -169,11 +243,23 @@ class DataDriftDetector:
         """Auto-detect categorical columns based on unique value count."""
         categorical_columns = []
         for col in common_columns:
+            # Skip if it's a date column
+            if (self._is_date_column(reference_data[col]) or 
+                self._is_date_column(comparison_data[col])):
+                continue
+                
+            # Check if it's categorical based on unique values
             if (reference_data[col].nunique() <= self.categorical_threshold and 
                 comparison_data[col].nunique() <= self.categorical_threshold):
                 categorical_columns.append(col)
+            # Also check if it can't be converted to numeric
+            elif (not self._can_convert_to_numeric(reference_data[col]) or
+                  not self._can_convert_to_numeric(comparison_data[col])):
+                categorical_columns.append(col)
+                
         return categorical_columns
     
+
     def _initialize_results(self) -> Dict[str, Any]:
         """Initialize the results dictionary."""
         return {
@@ -188,6 +274,7 @@ class DataDriftDetector:
             "recommendations": []
         }
     
+
     def _detect_feature_drift(self,
                              reference_data: pd.DataFrame,
                              comparison_data: pd.DataFrame,
@@ -221,6 +308,7 @@ class DataDriftDetector:
         
         return results
     
+
     def _detect_categorical_drift(self,
                                  series1: pd.Series,
                                  series2: pd.Series,
@@ -254,13 +342,19 @@ class DataDriftDetector:
         
         return drift_score
     
+
     def _detect_numerical_drift(self,
                                series1: pd.Series,
                                series2: pd.Series,
                                verbose: bool = False) -> float:
         """Detect drift in numerical features using statistical tests."""
-        s1 = series1.dropna()
-        s2 = series2.dropna()
+        # Convert to numeric, handling errors
+        try:
+            s1 = pd.to_numeric(series1, errors='coerce').dropna()
+            s2 = pd.to_numeric(series2, errors='coerce').dropna()
+        except:
+            # If conversion fails, treat as categorical
+            raise ValueError("Cannot convert to numeric")
         
         if len(s1) < 2 or len(s2) < 2:
             return 1.0
@@ -296,6 +390,7 @@ class DataDriftDetector:
         
         return drift_score
     
+
     def _detect_distribution_drift(self,
                                   reference_data: pd.DataFrame,
                                   comparison_data: pd.DataFrame,
@@ -309,15 +404,21 @@ class DataDriftDetector:
         if len(numerical_columns) >= 2:
             try:
                 sample_cols = numerical_columns[:2]
-                kde1 = gaussian_kde(reference_data[sample_cols].dropna().values.T)
-                kde2 = gaussian_kde(comparison_data[sample_cols].dropna().values.T)
+                # Convert to numeric and clean data
+                ref_data = reference_data[sample_cols].apply(pd.to_numeric, errors='coerce').dropna()
+                comp_data = comparison_data[sample_cols].apply(pd.to_numeric, errors='coerce').dropna()
                 
-                # Calculate Hellinger distance
-                h_dist = self._calculate_hellinger_distance(
-                    kde1, kde2, reference_data[sample_cols], 
-                    comparison_data[sample_cols]
-                )
-                distribution_results["joint_distribution"] = min(h_dist, 1.0)
+                if len(ref_data) > 10 and len(comp_data) > 10:
+                    kde1 = gaussian_kde(ref_data.values.T)
+                    kde2 = gaussian_kde(comp_data.values.T)
+                    
+                    # Calculate Hellinger distance
+                    h_dist = self._calculate_hellinger_distance(
+                        kde1, kde2, ref_data, comp_data
+                    )
+                    distribution_results["joint_distribution"] = min(h_dist, 1.0)
+                else:
+                    distribution_results["joint_distribution"] = 0.5
             except:
                 distribution_results["joint_distribution"] = 0.5
         else:
@@ -347,6 +448,7 @@ class DataDriftDetector:
         results["distribution_drift"] = distribution_results
         return results
     
+
     def _detect_statistical_drift(self,
                                  reference_data: pd.DataFrame,
                                  comparison_data: pd.DataFrame,
@@ -362,12 +464,16 @@ class DataDriftDetector:
             u_scores = []
             for col in numerical_columns:
                 try:
-                    _, p_value = stats.mannwhitneyu(
-                        reference_data[col].dropna(),
-                        comparison_data[col].dropna(),
-                        alternative='two-sided'
-                    )
-                    u_scores.append(1 - p_value)
+                    ref_data = pd.to_numeric(reference_data[col], errors='coerce').dropna()
+                    comp_data = pd.to_numeric(comparison_data[col], errors='coerce').dropna()
+                    
+                    if len(ref_data) > 0 and len(comp_data) > 0:
+                        _, p_value = stats.mannwhitneyu(
+                            ref_data, comp_data, alternative='two-sided'
+                        )
+                        u_scores.append(1 - p_value)
+                    else:
+                        u_scores.append(0.5)
                 except:
                     u_scores.append(0.5)
             
@@ -379,11 +485,14 @@ class DataDriftDetector:
             levene_scores = []
             for col in numerical_columns:
                 try:
-                    _, p_value = stats.levene(
-                        reference_data[col].dropna(),
-                        comparison_data[col].dropna()
-                    )
-                    levene_scores.append(1 - p_value)
+                    ref_data = pd.to_numeric(reference_data[col], errors='coerce').dropna()
+                    comp_data = pd.to_numeric(comparison_data[col], errors='coerce').dropna()
+                    
+                    if len(ref_data) > 0 and len(comp_data) > 0:
+                        _, p_value = stats.levene(ref_data, comp_data)
+                        levene_scores.append(1 - p_value)
+                    else:
+                        levene_scores.append(0.5)
                 except:
                     levene_scores.append(0.5)
             
@@ -422,6 +531,7 @@ class DataDriftDetector:
         results["statistical_drift"] = statistical_results
         return results
     
+
     def _detect_dimension_drift(self,
                                reference_data: pd.DataFrame,
                                comparison_data: pd.DataFrame,
@@ -432,13 +542,19 @@ class DataDriftDetector:
             return 0.0
         
         try:
-            # Prepare data
-            X1 = reference_data[numerical_columns].fillna(
-                reference_data[numerical_columns].mean()
-            )
-            X2 = comparison_data[numerical_columns].fillna(
-                comparison_data[numerical_columns].mean()
-            )
+            # Prepare data with proper numeric conversion
+            X1 = reference_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            X2 = comparison_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            
+            # Check if we have valid data
+            if X1.empty or X2.empty or X1.isna().all().all() or X2.isna().all().all():
+                if verbose:
+                    print("Dimension drift: No valid numerical data available")
+                return 0.0
             
             # Standardize data
             scaler = StandardScaler()
@@ -488,6 +604,7 @@ class DataDriftDetector:
                 print(f"Dimension drift calculation failed: {e}")
             return 0.5
     
+
     def _detect_outlier_drift(self,
                              reference_data: pd.DataFrame,
                              comparison_data: pd.DataFrame,
@@ -498,13 +615,19 @@ class DataDriftDetector:
             return 0.0
         
         try:
-            # Prepare data
-            X1 = reference_data[numerical_columns].fillna(
-                reference_data[numerical_columns].mean()
-            )
-            X2 = comparison_data[numerical_columns].fillna(
-                comparison_data[numerical_columns].mean()
-            )
+            # Prepare data with proper numeric conversion
+            X1 = reference_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            X2 = comparison_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            
+            # Check if we have valid data
+            if X1.empty or X2.empty or X1.isna().all().all() or X2.isna().all().all():
+                if verbose:
+                    print("Outlier drift: No valid numerical data available")
+                return 0.0
             
             # Fit Isolation Forest on reference data
             iso_forest = IsolationForest(
@@ -548,6 +671,7 @@ class DataDriftDetector:
                 print(f"Outlier drift calculation failed: {e}")
             return 0.3
     
+
     def _detect_correlation_drift(self,
                                  reference_data: pd.DataFrame,
                                  comparison_data: pd.DataFrame,
@@ -558,9 +682,23 @@ class DataDriftDetector:
             return 0.0
         
         try:
+            # Prepare data with proper numeric conversion
+            ref_data = reference_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            comp_data = comparison_data[numerical_columns].apply(
+                pd.to_numeric, errors='coerce'
+            ).fillna(method='ffill').fillna(0)
+            
+            # Check if we have valid data
+            if ref_data.empty or comp_data.empty or ref_data.isna().all().all() or comp_data.isna().all().all():
+                if verbose:
+                    print("Correlation drift: No valid numerical data available")
+                return 0.0
+            
             # Calculate correlation matrices
-            corr1 = reference_data[numerical_columns].corr().fillna(0)
-            corr2 = comparison_data[numerical_columns].corr().fillna(0)
+            corr1 = ref_data.corr().fillna(0)
+            corr2 = comp_data.corr().fillna(0)
             
             # Extract upper triangular elements
             corr1_vec = corr1.values[np.triu_indices(len(numerical_columns), k=1)]
@@ -574,10 +712,7 @@ class DataDriftDetector:
             corr_distance = 1 - cos_sim
             
             # RV coefficient
-            rv_distance = self._calculate_rv_coefficient(
-                reference_data[numerical_columns],
-                comparison_data[numerical_columns]
-            )
+            rv_distance = self._calculate_rv_coefficient(ref_data, comp_data)
             
             correlation_drift = (0.4 * frob_norm + 0.3 * corr_distance + 
                                0.3 * rv_distance)
@@ -596,6 +731,7 @@ class DataDriftDetector:
                 print(f"Correlation drift calculation failed: {e}")
             return 0.3
     
+
     def _calculate_overall_drift_score(self,
                                      results: Dict,
                                      importance_weights: Optional[Dict[str, float]] = None) -> float:
@@ -625,437 +761,377 @@ class DataDriftDetector:
         
         return np.clip(overall_drift, 0.0, 1.0)
     
+
     def _generate_recommendations(self, results: Dict) -> List[str]:
-        """Generate actionable recommendations based on drift analysis."""
-        recommendations = []
-        feature_drift_scores = results["feature_drift"]
-        sorted_features = sorted(feature_drift_scores.items(), 
-                               key=lambda x: x[1], reverse=True)
+            """Generate actionable recommendations based on drift analysis."""
+            recommendations = []
+            
+            # High drift score recommendations
+            if results["drift_score"] > 0.8:
+                recommendations.append("CRITICAL: High drift detected. Consider retraining your model immediately.")
+            elif results["drift_score"] > self.drift_threshold:
+                recommendations.append("WARNING: Significant drift detected. Monitor model performance closely.")
+            
+            # Feature-specific recommendations
+            high_drift_features = [col for col, score in results["feature_drift"].items() 
+                                if score > 0.7]
+            if high_drift_features:
+                recommendations.append(f"High drift detected in features: {', '.join(high_drift_features)}. "
+                                    "Consider feature engineering or data preprocessing adjustments.")
+            
+            # Distribution drift recommendations
+            if results["distribution_drift"].get("overall", 0) > 0.7:
+                recommendations.append("Significant distribution drift detected. "
+                                    "Check data collection process and preprocessing pipeline.")
+            
+            # Outlier drift recommendations
+            if results["outlier_drift"] > 0.6:
+                recommendations.append("Outlier patterns have changed. "
+                                    "Review data quality and consider outlier detection mechanisms.")
+            
+            # Correlation drift recommendations
+            if results["correlation_drift"] > 0.6:
+                recommendations.append("Feature relationships have changed. "
+                                    "Consider updating feature selection or model architecture.")
+            
+            # General recommendations
+            if results["drift_detected"]:
+                recommendations.extend([
+                    "Increase monitoring frequency for this data source.",
+                    "Consider implementing automated retraining triggers.",
+                    "Evaluate model performance metrics on recent data."
+                ])
+            
+            return recommendations
+
+
+    def _print_results(self, results: Dict):
+        """Print comprehensive drift analysis results."""
+        print("\n" + "="*60)
+        print("DATA DRIFT ANALYSIS RESULTS")
+        print("="*60)
         
-        if results["drift_score"] > self.drift_threshold:
-            recommendations.append(
-                "Significant drift detected. Consider retraining your model with newer data."
-            )
-            
-            top_drifting = [f[0] for f in sorted_features[:3] 
-                          if f[1] > self.drift_threshold]
-            if top_drifting:
-                recommendations.append(
-                    f"Focus on these high-drift features: {', '.join(top_drifting)}."
-                )
-            
-            if results["correlation_drift"] > self.drift_threshold:
-                recommendations.append(
-                    "Significant changes in feature correlations detected. "
-                    "Review feature interactions."
-                )
-            
-            if results["dimension_drift"] > self.drift_threshold:
-                recommendations.append(
-                    "Underlying data dimensions have shifted. "
-                    "Consider revisiting feature engineering."
-                )
-            
-            if results["outlier_drift"] > self.drift_threshold:
-                recommendations.append(
-                    "Outlier patterns have changed. "
-                    "Review outlier handling strategy."
-                )
+        # Overall results
+        print(f"\nOverall Drift Score: {results['drift_score']:.4f}")
+        print(f"Drift Detected: {'YES' if results['drift_detected'] else 'NO'}")
+        print(f"Threshold: {self.drift_threshold}")
         
-        elif results["drift_score"] > self.drift_threshold * 0.7:
-            recommendations.append(
-                "Moderate drift detected. Monitor model performance closely."
-            )
-            
-            mod_drifting = [f[0] for f in sorted_features[:2] 
-                          if f[1] > self.drift_threshold * 0.7]
-            if mod_drifting:
-                recommendations.append(
-                    f"Keep an eye on these features: {', '.join(mod_drifting)}."
-                )
+        # Feature-level drift
+        print(f"\n{'Feature Drift Analysis':<30} {'Score':<10}")
+        print("-" * 40)
+        for feature, score in results["feature_drift"].items():
+            status = "HIGH" if score > 0.7 else "MEDIUM" if score > 0.4 else "LOW"
+            print(f"{feature:<30} {score:<10.4f} [{status}]")
         
-        else:
-            recommendations.append(
-                "No significant drift detected. "
-                "Model should perform similarly on new data."
-            )
+        # Other drift types
+        print(f"\n{'Drift Type':<25} {'Score':<10} {'Status':<10}")
+        print("-" * 45)
         
-        return recommendations
+        dist_score = results["distribution_drift"].get("overall", 0)
+        stat_score = results["statistical_drift"].get("overall", 0)
+        
+        for name, score in [
+            ("Distribution", dist_score),
+            ("Statistical", stat_score),
+            ("Dimensional", results["dimension_drift"]),
+            ("Outlier", results["outlier_drift"]),
+            ("Correlation", results["correlation_drift"])
+        ]:
+            status = "HIGH" if score > 0.7 else "MEDIUM" if score > 0.4 else "LOW"
+            print(f"{name:<25} {score:<10.4f} [{status}]")
+        
+        # Recommendations
+        if results["recommendations"]:
+            print(f"\nRECOMMENDATIONS:")
+            print("-" * 20)
+            for i, rec in enumerate(results["recommendations"], 1):
+                print(f"{i}. {rec}")
+        
+        print("\n" + "="*60)
     
-    def _print_results(self, results: Dict) -> None:
-        """Print detailed drift analysis results."""
-        print(f"Overall drift score: {results['drift_score']:.4f}")
-        print(f"Drift detected: {results['drift_detected']}")
-        print("\nTop drifting features:")
+
+    def _calculate_js_distance(self, dist1: Dict, dist2: Dict, all_categories: set) -> float:
+        """Calculate Jensen-Shannon distance between two categorical distributions."""
+        # Create probability vectors
+        p = np.array([dist1.get(cat, 0) for cat in all_categories])
+        q = np.array([dist2.get(cat, 0) for cat in all_categories])
         
-        top_features = sorted(results["feature_drift"].items(), 
-                            key=lambda x: x[1], reverse=True)[:5]
-        for feature, score in top_features:
-            print(f"  - {feature}: {score:.4f}")
+        # Normalize
+        p = p / np.sum(p) if np.sum(p) > 0 else np.ones(len(p)) / len(p)
+        q = q / np.sum(q) if np.sum(q) > 0 else np.ones(len(q)) / len(q)
         
-        print("\nRecommendations:")
-        for rec in results["recommendations"]:
-            print(f"  - {rec}")
-    
-    # Helper methods for calculations (keeping them concise)
-    def _calculate_js_distance(self, dist1: Dict, dist2: Dict, categories: set) -> float:
-        """Calculate Jensen-Shannon distance between two distributions."""
+        # Add small epsilon to avoid log(0)
         epsilon = 1e-10
-        js_distance = 0
+        p = p + epsilon
+        q = q + epsilon
+        p = p / np.sum(p)
+        q = q / np.sum(q)
         
-        for category in categories:
-            p = dist1.get(category, 0) + epsilon
-            q = dist2.get(category, 0) + epsilon
-            m = (p + q) / 2
-            js_distance += 0.5 * (p * np.log(p/m) + q * np.log(q/m))
-        
-        return js_distance
+        # Calculate JS distance
+        m = 0.5 * (p + q)
+        js_distance = 0.5 * np.sum(p * np.log(p / m)) + 0.5 * np.sum(q * np.log(q / m))
+        return min(np.sqrt(js_distance), 1.0)
     
-    def _calculate_chi2_drift(self, dist1: Dict, dist2: Dict, categories: set, 
-                             n1: int, n2: int) -> float:
-        """Calculate chi-square drift score."""
+
+    def _calculate_chi2_drift(self, dist1: Dict, dist2: Dict, all_categories: set, 
+                            n1: int, n2: int) -> float:
+        """Calculate chi-square based drift score."""
         try:
-            counts1 = [dist1.get(cat, 0) * n1 for cat in categories]
-            counts2 = [dist2.get(cat, 0) * n2 for cat in categories]
+            observed1 = np.array([dist1.get(cat, 0) * n1 for cat in all_categories])
+            observed2 = np.array([dist2.get(cat, 0) * n2 for cat in all_categories])
             
-            if all(c >= 5 for c in counts1 + counts2):
-                _, p_value = stats.chi2_contingency([counts1, counts2])
-                return 1 - p_value
-            else:
-                return self._calculate_js_distance(dist1, dist2, categories)
-        except:
-            return self._calculate_js_distance(dist1, dist2, categories)
-    
-    def _calculate_psi(self, dist1: Dict, dist2: Dict, categories: set) -> float:
-        """Calculate Population Stability Index."""
-        epsilon = 1e-10
-        psi = 0
-        
-        for category in categories:
-            p = dist1.get(category, 0) + epsilon
-            q = dist2.get(category, 0) + epsilon
-            psi += (p - q) * np.log(p / q)
-        
-        return psi
-    
-    def _calculate_ks_drift(self, s1: pd.Series, s2: pd.Series) -> float:
-        """Calculate Kolmogorov-Smirnov drift score."""
-        try:
-            _, p_value = stats.ks_2samp(s1, s2)
-            return 1 - p_value
+            # Create contingency table
+            contingency = np.array([observed1, observed2])
+            
+            # Avoid zero counts
+            contingency = contingency + 0.5
+            
+            chi2, p_value, _, _ = stats.chi2_contingency(contingency)
+            return min(1 - p_value, 1.0)
         except:
             return 0.5
+    
 
-    def _calculate_js_distance_numerical(self, s1: pd.Series, s2: pd.Series) -> float:
-        """Calculate Jensen-Shannon distance for numerical data."""
-        try:
-            hist1, bin_edges = np.histogram(s1, bins=20, density=True)
-            hist2, _ = np.histogram(s2, bins=bin_edges, density=True)
+    def _calculate_psi(self, dist1: Dict, dist2: Dict, all_categories: set) -> float:
+        """Calculate Population Stability Index."""
+        psi = 0
+        for cat in all_categories:
+            p1 = dist1.get(cat, 1e-10)
+            p2 = dist2.get(cat, 1e-10)
             
+            # Avoid division by zero
+            if p1 == 0:
+                p1 = 1e-10
+            if p2 == 0:
+                p2 = 1e-10
+                
+            psi += (p2 - p1) * np.log(p2 / p1)
+        
+        return abs(psi)
+    
+
+    def _calculate_ks_drift(self, series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate Kolmogorov-Smirnov test based drift."""
+        try:
+            ks_stat, _ = stats.ks_2samp(series1, series2)
+            return min(ks_stat, 1.0)
+        except:
+            return 0.5
+    
+
+    def _calculate_js_distance_numerical(self, series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate JS distance for numerical data using histograms."""
+        try:
+            # Create histograms with same bins
+            min_val = min(series1.min(), series2.min())
+            max_val = max(series1.max(), series2.max())
+            bins = np.linspace(min_val, max_val, 20)
+            
+            hist1, _ = np.histogram(series1, bins=bins, density=True)
+            hist2, _ = np.histogram(series2, bins=bins, density=True)
+            
+            # Normalize
+            hist1 = hist1 / np.sum(hist1) if np.sum(hist1) > 0 else np.ones(len(hist1)) / len(hist1)
+            hist2 = hist2 / np.sum(hist2) if np.sum(hist2) > 0 else np.ones(len(hist2)) / len(hist2)
+            
+            # Add epsilon
             epsilon = 1e-10
             hist1 = hist1 + epsilon
             hist2 = hist2 + epsilon
             hist1 = hist1 / np.sum(hist1)
             hist2 = hist2 / np.sum(hist2)
             
-            m = (hist1 + hist2) / 2
-            js_distance = 0.5 * (np.sum(hist1 * np.log(hist1 / m)) + 
-                                np.sum(hist2 * np.log(hist2 / m)))
-            
-            return np.clip(js_distance, 0.0, 1.0)
+            # JS distance
+            m = 0.5 * (hist1 + hist2)
+            js_distance = 0.5 * np.sum(hist1 * np.log(hist1 / m)) + 0.5 * np.sum(hist2 * np.log(hist2 / m))
+            return min(np.sqrt(js_distance), 1.0)
         except:
             return 0.5
     
-    def _calculate_wasserstein_drift(self, s1: pd.Series, s2: pd.Series) -> float:
-        """Calculate Wasserstein (Earth Mover's) distance."""
+
+    def _calculate_wasserstein_drift(self, series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate normalized Wasserstein (Earth Mover's) distance."""
         try:
-            emd = stats.wasserstein_distance(s1, s2)
-            # Normalize by data range
-            data_range = max(s1.max(), s2.max()) - min(s1.min(), s2.min())
-            if data_range > 0:
-                emd_normalized = min(emd / data_range, 1.0)
+            emd = stats.wasserstein_distance(series1, series2)
+            # Normalize by the range of values
+            value_range = max(series1.max(), series2.max()) - min(series1.min(), series2.min())
+            if value_range > 0:
+                return min(emd / value_range, 1.0)
             else:
-                emd_normalized = 0.0
-            return emd_normalized
+                return 0.0
         except:
             return 0.5
     
-    def _calculate_basic_stats_drift(self, s1: pd.Series, s2: pd.Series) -> float:
-        """Calculate drift based on basic statistical differences."""
+
+    def _calculate_basic_stats_drift(self, series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate drift based on basic statistical measures."""
         try:
-            stats1 = {
-                'mean': s1.mean(),
-                'std': s1.std(),
-                'skew': stats.skew(s1),
-                'kurtosis': stats.kurtosis(s1)
-            }
+            # Calculate relative differences in basic statistics
+            stats1 = [series1.mean(), series1.std(), series1.skew(), series1.kurt()]
+            stats2 = [series2.mean(), series2.std(), series2.skew(), series2.kurt()]
             
-            stats2 = {
-                'mean': s2.mean(),
-                'std': s2.std(),
-                'skew': stats.skew(s2),
-                'kurtosis': stats.kurtosis(s2)
-            }
-            
-            differences = []
-            for stat in ['mean', 'std', 'skew', 'kurtosis']:
-                val1, val2 = stats1[stat], stats2[stat]
-                if np.isnan(val1) or np.isnan(val2):
-                    continue
-                
-                if stat in ['mean', 'std']:
-                    # Normalize by data range for mean and std
-                    data_range = max(s1.max(), s2.max()) - min(s1.min(), s2.min())
-                    if data_range > 0:
-                        diff = abs(val1 - val2) / data_range
-                    else:
-                        diff = 0.0
+            relative_diffs = []
+            for s1, s2 in zip(stats1, stats2):
+                if abs(s1) > 1e-10 or abs(s2) > 1e-10:
+                    max_val = max(abs(s1), abs(s2))
+                    relative_diffs.append(abs(s1 - s2) / max_val)
                 else:
-                    # For skew and kurtosis, use relative difference
-                    if abs(val1) + abs(val2) > 0:
-                        diff = abs(val1 - val2) / (abs(val1) + abs(val2))
-                    else:
-                        diff = 0.0
-                
-                differences.append(min(diff, 1.0))
+                    relative_diffs.append(0.0)
             
-            return np.mean(differences) if differences else 0.0
+            return min(np.mean(relative_diffs), 1.0)
         except:
             return 0.5
     
-    def _calculate_psi_numerical(self, s1: pd.Series, s2: pd.Series) -> float:
-        """Calculate Population Stability Index for numerical data."""
+
+    def _calculate_psi_numerical(self, series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate PSI for numerical data using binning."""
         try:
-            # Create bins based on reference data
-            _, bin_edges = np.histogram(s1, bins=10)
+            # Create bins based on reference data quantiles
+            bins = np.percentile(series1, [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+            bins = np.unique(bins)  # Remove duplicates
             
-            # Calculate bin counts
-            counts1, _ = np.histogram(s1, bins=bin_edges)
-            counts2, _ = np.histogram(s2, bins=bin_edges)
+            if len(bins) < 3:
+                return 0.5
+            
+            # Calculate distributions
+            hist1, _ = np.histogram(series1, bins=bins, density=False)
+            hist2, _ = np.histogram(series2, bins=bins, density=False)
             
             # Convert to proportions
-            prop1 = counts1 / len(s1)
-            prop2 = counts2 / len(s2)
+            p1 = hist1 / np.sum(hist1) if np.sum(hist1) > 0 else np.ones(len(hist1)) / len(hist1)
+            p2 = hist2 / np.sum(hist2) if np.sum(hist2) > 0 else np.ones(len(hist2)) / len(hist2)
             
             # Calculate PSI
-            epsilon = 1e-10
             psi = 0
-            for i in range(len(prop1)):
-                p = prop1[i] + epsilon
-                q = prop2[i] + epsilon
-                psi += (p - q) * np.log(p / q)
+            for i in range(len(p1)):
+                if p1[i] == 0:
+                    p1[i] = 1e-10
+                if p2[i] == 0:
+                    p2[i] = 1e-10
+                psi += (p2[i] - p1[i]) * np.log(p2[i] / p1[i])
             
             return min(abs(psi), 1.0)
         except:
             return 0.5
     
-    def _calculate_hellinger_distance(self, kde1, kde2, data1: pd.DataFrame, 
-                                    data2: pd.DataFrame) -> float:
+
+    def _calculate_hellinger_distance(self, kde1, kde2, ref_data: pd.DataFrame, 
+                                    comp_data: pd.DataFrame) -> float:
         """Calculate Hellinger distance between two KDE distributions."""
         try:
-            # Create a grid for evaluation
-            x_min = min(data1.iloc[:, 0].min(), data2.iloc[:, 0].min())
-            x_max = max(data1.iloc[:, 0].max(), data2.iloc[:, 0].max())
-            y_min = min(data1.iloc[:, 1].min(), data2.iloc[:, 1].min())
-            y_max = max(data1.iloc[:, 1].max(), data2.iloc[:, 1].max())
+            # Create grid for evaluation
+            x_min = min(ref_data.iloc[:, 0].min(), comp_data.iloc[:, 0].min())
+            x_max = max(ref_data.iloc[:, 0].max(), comp_data.iloc[:, 0].max())
+            y_min = min(ref_data.iloc[:, 1].min(), comp_data.iloc[:, 1].min())
+            y_max = max(ref_data.iloc[:, 1].max(), comp_data.iloc[:, 1].max())
             
-            x = np.linspace(x_min, x_max, 20)
-            y = np.linspace(y_min, y_max, 20)
-            xx, yy = np.meshgrid(x, y)
-            grid = np.vstack([xx.ravel(), yy.ravel()])
+            x_grid = np.linspace(x_min, x_max, 20)
+            y_grid = np.linspace(y_min, y_max, 20)
+            X, Y = np.meshgrid(x_grid, y_grid)
+            positions = np.vstack([X.ravel(), Y.ravel()])
             
             # Evaluate KDEs
-            pdf1 = kde1(grid)
-            pdf2 = kde2(grid)
+            f1 = kde1(positions).reshape(X.shape)
+            f2 = kde2(positions).reshape(X.shape)
             
             # Normalize
-            pdf1 = pdf1 / np.sum(pdf1)
-            pdf2 = pdf2 / np.sum(pdf2)
+            f1 = f1 / np.sum(f1)
+            f2 = f2 / np.sum(f2)
+            f1 = f1 + 1e-10
+            f2 = f2 + 1e-10
+            f1 = f1 / np.sum(f1)
+            f2 = f2 / np.sum(f2)
             
-            # Calculate Hellinger distance
-            hellinger = np.sqrt(0.5 * np.sum((np.sqrt(pdf1) - np.sqrt(pdf2))**2))
-            return hellinger
+            # Hellinger distance
+            hellinger = np.sqrt(0.5 * np.sum((np.sqrt(f1) - np.sqrt(f2))**2))
+            return min(hellinger, 1.0)
         except:
             return 0.5
     
-    def _calculate_multivariate_drift(self, X1: pd.DataFrame, X2: pd.DataFrame) -> float:
-        """Calculate multivariate drift using energy statistics."""
+
+    def _calculate_multivariate_drift(self, ref_data: pd.DataFrame, 
+                                    comp_data: pd.DataFrame) -> float:
+        """Calculate multivariate drift using statistical tests."""
         try:
+            # Convert to numeric
+            ref_numeric = ref_data.apply(pd.to_numeric, errors='coerce').fillna(0)
+            comp_numeric = comp_data.apply(pd.to_numeric, errors='coerce').fillna(0)
+            
+            if ref_numeric.empty or comp_numeric.empty:
+                return 0.5
+            
             # Sample data if too large
-            n1, n2 = len(X1), len(X2)
-            if n1 > 1000:
-                X1 = X1.sample(n=1000, random_state=self.random_state)
-            if n2 > 1000:
-                X2 = X2.sample(n=1000, random_state=self.random_state)
+            if len(ref_numeric) > 1000:
+                ref_numeric = ref_numeric.sample(1000, random_state=self.random_state)
+            if len(comp_numeric) > 1000:
+                comp_numeric = comp_numeric.sample(1000, random_state=self.random_state)
             
-            # Fill NaN values
-            X1_clean = X1.fillna(X1.mean())
-            X2_clean = X2.fillna(X2.mean())
+            # Combine datasets with labels
+            combined = np.vstack([ref_numeric.values, comp_numeric.values])
+            labels = np.hstack([np.zeros(len(ref_numeric)), np.ones(len(comp_numeric))])
             
-            # Standardize
-            scaler = StandardScaler()
-            X1_scaled = scaler.fit_transform(X1_clean)
-            X2_scaled = scaler.transform(X2_clean)
+            # Simple multivariate test using mean differences
+            ref_mean = np.mean(ref_numeric.values, axis=0)
+            comp_mean = np.mean(comp_numeric.values, axis=0)
             
-            # Calculate energy statistic approximation
-            n1, n2 = len(X1_scaled), len(X2_scaled)
+            # Calculate normalized distance
+            diff = ref_mean - comp_mean
+            ref_std = np.std(ref_numeric.values, axis=0) + 1e-10
+            normalized_diff = np.abs(diff / ref_std)
             
-            # Calculate pairwise distances within and between samples
-            def avg_distance(X, Y):
-                if len(X) == 0 or len(Y) == 0:
-                    return 0
-                distances = []
-                for i in range(min(len(X), 100)):  # Sample for efficiency
-                    for j in range(min(len(Y), 100)):
-                        distances.append(np.linalg.norm(X[i] - Y[j]))
-                return np.mean(distances)
-            
-            d_12 = avg_distance(X1_scaled, X2_scaled)
-            d_11 = avg_distance(X1_scaled, X1_scaled)
-            d_22 = avg_distance(X2_scaled, X2_scaled)
-            
-            # Energy statistic
-            energy_stat = 2 * d_12 - d_11 - d_22
-            
-            # Normalize to [0, 1]
-            energy_normalized = min(abs(energy_stat), 1.0)
-            
-            return energy_normalized
+            return min(np.mean(normalized_diff), 1.0)
         except:
             return 0.5
     
-    def _combine_distribution_scores(self, distribution_results: Dict) -> float:
-        """Combine multiple distribution drift scores."""
-        scores = [v for k, v in distribution_results.items() if k != "overall"]
-        if not scores:
-            return 0.0
-        return np.mean(scores)
-    
-    def _combine_statistical_scores(self, statistical_results: Dict) -> float:
-        """Combine multiple statistical test scores."""
-        scores = [v for k, v in statistical_results.items() if k != "overall"]
-        if not scores:
-            return 0.0
-        return np.mean(scores)
-    
-    def _calculate_rv_coefficient(self, X1: pd.DataFrame, X2: pd.DataFrame) -> float:
-        """Calculate RV coefficient distance for correlation comparison."""
+
+    def _calculate_rv_coefficient(self, ref_data: pd.DataFrame, 
+                                comp_data: pd.DataFrame) -> float:
+        """Calculate RV coefficient for correlation structure comparison."""
         try:
-            # Fill NaN values
-            X1_clean = X1.fillna(X1.mean())
-            X2_clean = X2.fillna(X2.mean())
+            # Calculate cross-product matrices
+            ref_centered = ref_data - ref_data.mean()
+            comp_centered = comp_data - comp_data.mean()
             
-            # Calculate correlation matrices
-            R1 = X1_clean.corr().fillna(0).values
-            R2 = X2_clean.corr().fillna(0).values
+            S1 = np.dot(ref_centered.T, ref_centered)
+            S2 = np.dot(comp_centered.T, comp_centered)
             
-            # Calculate RV coefficient
-            numerator = np.trace(R1 @ R2)
-            denominator = np.sqrt(np.trace(R1 @ R1) * np.trace(R2 @ R2))
+            # RV coefficient
+            numerator = np.trace(np.dot(S1, S2))
+            denominator = np.sqrt(np.trace(np.dot(S1, S1)) * np.trace(np.dot(S2, S2)))
             
             if denominator > 0:
                 rv_coeff = numerator / denominator
-                rv_distance = 1 - abs(rv_coeff)
+                return 1 - abs(rv_coeff)
             else:
-                rv_distance = 0.5
-            
-            return np.clip(rv_distance, 0.0, 1.0)
+                return 0.5
         except:
             return 0.5
     
-    def get_drift_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of the drift detection results.
-        
-        Returns:
-        --------
-        Dict[str, Any]
-            Summary dictionary with key metrics and insights
-        """
+
+    def _combine_distribution_scores(self, distribution_results: Dict) -> float:
+        """Combine distribution drift scores."""
+        scores = [v for k, v in distribution_results.items() if k != "overall"]
+        return np.mean(scores) if scores else 0.0
+    
+
+    def _combine_statistical_scores(self, statistical_results: Dict) -> float:
+        """Combine statistical drift scores."""
+        scores = [v for k, v in statistical_results.items() if k != "overall"]
+        return np.mean(scores) if scores else 0.0
+    
+
+    def get_drift_summary(self) -> Dict:
+        """Get a summary of the drift analysis results."""
         if self.results_ is None:
-            return {"error": "No drift detection results available. Run detect_drift() first."}
+            raise ValueError("No drift analysis has been performed. Call detect_drift() first.")
         
-        feature_drift = self.results_["feature_drift"]
-        
-        # Calculate summary statistics
-        high_drift_features = [f for f, score in feature_drift.items() 
-                              if score > self.drift_threshold]
-        moderate_drift_features = [f for f, score in feature_drift.items() 
-                                  if self.drift_threshold * 0.5 < score <= self.drift_threshold]
-        
-        top_drifting = sorted(feature_drift.items(), key=lambda x: x[1], reverse=True)[:5]
-        
-        summary = {
-            "overall_drift_score": round(self.results_["drift_score"], 4),
+        return {
+            "overall_drift_score": self.results_["drift_score"],
             "drift_detected": self.results_["drift_detected"],
-            "total_features_analyzed": len(feature_drift),
-            "high_drift_features_count": len(high_drift_features),
-            "moderate_drift_features_count": len(moderate_drift_features),
-            "stable_features_count": len(feature_drift) - len(high_drift_features) - len(moderate_drift_features),
-            "top_drifting_features": {f: round(score, 4) for f, score in top_drifting},
-            "drift_components": {
-                "dimension_drift": round(self.results_["dimension_drift"], 4),
-                "outlier_drift": round(self.results_["outlier_drift"], 4),
-                "correlation_drift": round(self.results_["correlation_drift"], 4),
-                "distribution_drift": round(self.results_["distribution_drift"].get("overall", 0), 4),
-                "statistical_drift": round(self.results_["statistical_drift"].get("overall", 0), 4)
-            },
-            "recommendations": self.results_["recommendations"],
-            "drift_threshold_used": self.drift_threshold
+            "high_drift_features": [col for col, score in self.results_["feature_drift"].items() 
+                                if score > 0.7],
+            "moderate_drift_features": [col for col, score in self.results_["feature_drift"].items() 
+                                    if 0.4 < score <= 0.7],
+            "num_recommendations": len(self.results_["recommendations"])
         }
-        
-        return summary
     
-    def export_results(self, filepath: str, format: str = 'json') -> None:
-        """
-        Export drift detection results to file.
-        
-        Parameters:
-        -----------
-        filepath : str
-            Path where to save the results
-        format : str, default='json'
-            Export format ('json', 'csv', or 'pickle')
-        """
-        if self.results_ is None:
-            raise ValueError("No drift detection results available. Run detect_drift() first.")
-        
-        if format.lower() == 'json':
-            import json
-            # Convert numpy types to Python types for JSON serialization
-            json_results = self._convert_for_json(self.results_)
-            with open(filepath, 'w') as f:
-                json.dump(json_results, f, indent=2)
-        
-        elif format.lower() == 'csv':
-            # Export feature drift scores as CSV
-            feature_drift_df = pd.DataFrame(
-                list(self.results_["feature_drift"].items()),
-                columns=['Feature', 'Drift_Score']
-            )
-            feature_drift_df.to_csv(filepath, index=False)
-        
-        elif format.lower() == 'pickle':
-            import pickle
-            with open(filepath, 'wb') as f:
-                pickle.dump(self.results_, f)
-        
-        else:
-            raise ValueError("Supported formats are: 'json', 'csv', 'pickle'")
-    
-    def _convert_for_json(self, obj):
-        """Convert numpy types to Python types for JSON serialization."""
-        if isinstance(obj, dict):
-            return {key: self._convert_for_json(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [self._convert_for_json(item) for item in obj]
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.int64, np.int32)):
-            return int(obj)
-        elif isinstance(obj, (np.float64, np.float32)):
-            return float(obj)
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        else:
-            return obj
